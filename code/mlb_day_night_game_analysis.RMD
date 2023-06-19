@@ -95,7 +95,7 @@ all_teams_agg <- all_teams_agg |>
 ## Export Data
 We'll export the data to flat files so they can be imported into Tableau.
 ```{r export dataframes}
-write_excel_csv(all_teams, file = "day_night_by_team.csv")
-write_excel_csv(all_teams_agg, file = "day_night_wins_by_team.csv")
+write_excel_csv(all_teams, file = here("output", "day_night_by_team.csv"))
+write_excel_csv(all_teams_agg, file = here("output", "day_night_wins_by_team.csv"))
 ```
 
