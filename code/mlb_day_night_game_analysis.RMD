@@ -1,0 +1,101 @@
+---
+title: "MLB Day Night Game Analysis"
+author: "cwhaley"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+This analysis will look at MLB team performances, comparing day games and night games. We'll
+use the following packages for MLB game data, project workflow, and data manipulation:
+
+```{r load packages}
+library(baseballr)  # game/season data
+library(tidyverse)  # data manipulation
+library(here)       # project workflow, easy folder navigation
+
+data(teams_lu_table)  # reference data for teams (divisions)
+```
+
+## Clean Team and Division Names
+
+Here we will shorten the division names by assigning an acronym to the league -- American
+League becomes "AL", and National League becomes "NL". The reference table also has the wrong name
+for Cleveland (i.e., Indians) so we will change this to the current name (i.e., Guardians).
+
+```{r division and team names, echo=FALSE}
+# clean up division names
+teams_divisions <- teams_lu_table |> 
+  filter(sport.name == 'Major League Baseball') |> 
+  select(name, league.name, division.name) |> 
+  mutate(division = case_when(
+    league.name == 'American League' ~ str_replace_all(division.name, 'American League', 'AL'),
+    league.name == 'National League' ~ str_replace_all(division.name, 'National League', 'NL')
+  )) |> 
+  rename(league = league.name) |> 
+  select(-division.name)
+
+# fix the Cleveland Guardians team name in the lookup division table
+teams_divisions$name <- ifelse(teams_divisions$name == 'Cleveland Indians',
+                          'Cleveland Guardians',
+                          teams_divisions$name)
+```
+
+
+
+```{r pivot data, echo=FALSE}
+# basically pivot the wide format of the data to long
+away_teams <- mlb_schedule(season = 2023, level_ids = "1") |> 
+  filter(series_description == 'Regular Season' & status_detailed_state == 'Final') |> 
+  select(date, game_pk, day_night, teams_away_team_name, teams_away_is_winner) |> 
+  mutate(teams_away_is_winner = case_when(
+    teams_away_is_winner == TRUE ~ 1,
+    TRUE ~ 0
+  )) |> 
+  rename(team = teams_away_team_name, win_indicator = teams_away_is_winner)
+
+home_teams <-  mlb_schedule(season = 2023, level_ids = "1") |> 
+  filter(series_description == 'Regular Season' & status_detailed_state == 'Final') |> 
+  select(date, game_pk, day_night, teams_home_team_name, teams_home_is_winner) |> 
+  mutate(teams_home_is_winner = case_when(
+    teams_home_is_winner == TRUE ~ 1,
+    TRUE ~ 0
+  )) |> 
+  rename(team = teams_home_team_name, win_indicator = teams_home_is_winner)
+
+# union back into table, long format
+all_teams <- bind_rows(away_teams, home_teams)
+
+# add division names
+all_teams <- all_teams |> 
+  inner_join(teams_divisions, by = c("team"="name"))
+```
+
+```{r aggregate wins and percentages, echo=FALSE}
+# wins per team per day-night
+all_teams_agg <- all_teams |> 
+  group_by(day_night, team) |> 
+  summarise(wins = sum(win_indicator),
+            num_games = n_distinct(game_pk),
+            day_night_win_pct = wins/num_games) |> 
+  arrange(team)
+
+# add in division info
+all_teams_agg <- all_teams_agg |> 
+  inner_join(teams_divisions, by = c("team"="name"))
+
+```
+
+## Export Data
+We'll export the data to flat files so they can be imported into Tableau.
+```{r export dataframes}
+write_excel_csv(all_teams, file = "day_night_by_team.csv")
+write_excel_csv(all_teams_agg, file = "day_night_wins_by_team.csv")
+```
+
